@@ -4,7 +4,16 @@
 // _JEKO_HEADER_BEGIN VARSION:0
 // The Jeko Documentation at https://github.com/yulon/jeko
 #include <type_traits>
+#include <typeinfo>
+#include <typeindex>
 #include <memory>
+#include <unordered_map>
+
+#ifdef __cpp_lib_shared_mutex
+	#include <shared_mutex>
+#else
+	#include <mutex>
+#endif
 
 template <typename MethodSet>
 class jeko;
@@ -32,32 +41,32 @@ jeko(std::nullptr_t = nullptr) { \
 } \
 _JEKO_CONCEPT(Impl) \
 jeko(Impl *obj) { \
-	if (obj) { \
-		*reinterpret_cast<Impl **>(&value()._owner_ptr) = obj; \
-		value()._method_table_ptr = &wrapper::_method_table_t::static_binding<Impl *>(); \
-	} else { \
+	if (!obj) { \
 		value()._method_table_ptr = nullptr; \
+		return; \
 	} \
+	*reinterpret_cast<Impl **>(&value()._owner_ptr) = obj; \
+	value()._method_table_ptr = &wrapper::_method_table_t::static_binding<Impl *>(); \
 } \
 \
 _JEKO_CONCEPT(Impl) \
 jeko(std::shared_ptr<Impl> &&obj) { \
-	if (obj) { \
-		new (reinterpret_cast<std::shared_ptr<Impl> *>(&value()._owner_ptr)) std::shared_ptr<Impl>(std::move(obj)); \
-		value()._method_table_ptr = &wrapper::_method_table_t::static_binding<std::shared_ptr<Impl>>(); \
-	} else { \
+	if (!obj) { \
 		value()._method_table_ptr = nullptr; \
+		return; \
 	} \
+	new (reinterpret_cast<std::shared_ptr<Impl> *>(&value()._owner_ptr)) std::shared_ptr<Impl>(std::move(obj)); \
+	value()._method_table_ptr = &wrapper::_method_table_t::static_binding<std::shared_ptr<Impl>>(); \
 } \
 \
 _JEKO_CONCEPT(Impl) \
 jeko(const std::shared_ptr<Impl> &obj) { \
-	if (obj) { \
-		new (reinterpret_cast<std::shared_ptr<Impl> *>(&value()._owner_ptr)) std::shared_ptr<Impl>(obj); \
-		value()._method_table_ptr = &wrapper::_method_table_t::static_binding<std::shared_ptr<Impl>>(); \
-	} else { \
+	if (!obj) { \
 		value()._method_table_ptr = nullptr; \
+		return; \
 	} \
+	new (reinterpret_cast<std::shared_ptr<Impl> *>(&value()._owner_ptr)) std::shared_ptr<Impl>(obj); \
+	value()._method_table_ptr = &wrapper::_method_table_t::static_binding<std::shared_ptr<Impl>>(); \
 } \
 \
 _JEKO_CONCEPT(Impl) \
@@ -70,7 +79,6 @@ _JEKO_CONCEPT(Impl) \
 jeko(Impl &&obj) : jeko(std::make_shared<typename std::decay<Impl>::type>(std::forward<Impl>(obj))) {} \
 \
 _JEKO_CONCEPT(Impl) \
-\
 jeko(Impl &obj) : jeko(&obj) {} \
 \
 jeko(const jeko &src) { \
@@ -79,15 +87,6 @@ jeko(const jeko &src) { \
 		return; \
 	} \
 	src->_method_table_ptr->_copy_owner_ptr(&src->_owner_ptr, &value()._owner_ptr); \
-	if (src->_method_table_ptr->_free_method_table_ptr) { \
-		/* To be improved. */ \
-		value()._method_table_ptr = new wrapper::_method_table_t; \
-		*value()._method_table_ptr = *src->_method_table_ptr; \
-		value()._method_table_ptr->_free_method_table_ptr = [](wrapper::_method_table_t *method_table_ptr) { \
-			delete method_table_ptr; \
-		}; \
-		return; \
-	} \
 	value()._method_table_ptr = src->_method_table_ptr; \
 } \
 \
@@ -113,6 +112,27 @@ jeko &operator=(jeko &&src) { \
 	return *this; \
 } \
 \
+_JEKO_CONCEPT(OtherMethodSet) \
+jeko(const jeko<OtherMethodSet> &src) { \
+	if (!src) { \
+		value()._method_table_ptr = nullptr; \
+		return; \
+	} \
+	src->_method_table_ptr->_copy_owner_ptr(&src->_owner_ptr, &value()._owner_ptr); \
+	value()._method_table_ptr = &wrapper::_method_table_t::dynamic_binding(src); \
+} \
+\
+_JEKO_CONCEPT(OtherMethodSet) \
+jeko(jeko<OtherMethodSet> &&src) { \
+	if (!src) { \
+		value()._method_table_ptr = nullptr; \
+		return; \
+	} \
+	src->_method_table_ptr->_move_owner_ptr(&src->_owner_ptr, &value()._owner_ptr); \
+	value()._method_table_ptr = &wrapper::_method_table_t::dynamic_binding(src); \
+	src->_method_table_ptr = nullptr; \
+} \
+\
 ~jeko() { \
 	reset(); \
 } \
@@ -123,9 +143,6 @@ void reset() { \
 	} \
 	if (value()._method_table_ptr->_free_owner_ptr) { \
 		value()._method_table_ptr->_free_owner_ptr(&value()._owner_ptr); \
-	} \
-	if (value()._method_table_ptr->_free_method_table_ptr) { \
-		value()._method_table_ptr->_free_method_table_ptr(value()._method_table_ptr); \
 	} \
 	value()._method_table_ptr = nullptr; \
 } \
@@ -184,6 +201,11 @@ template <>
 class jeko<animal> {
 // _JEKO_SPECIALIZED METHODSET_HASH:0
 // The Jeko Documentation at https://github.com/yulon/jeko
+#define _JEKO_CONCEPT(_T) \
+template < \
+	typename _T, \
+	typename = decltype(std::remove_reference<_T>::type::age) \
+>
 public:
 	class wrapper {
 	public:
@@ -199,7 +221,6 @@ public:
 
 		struct _method_table_t {
 			const std::type_info *_type_info_ptr;
-			void (*_free_method_table_ptr)(_method_table_t *);
 			void (*_free_owner_ptr)(void *);
 			void (*_copy_owner_ptr)(const void *, void *);
 			void (*_move_owner_ptr)(void *, void *);
@@ -209,7 +230,6 @@ public:
 			static constexpr _method_table_t static_bind() {
 				return _method_table_t{
 					&typeid(typename _jeko::_ptr_elmt<Owner>::type),
-					nullptr,
 					std::is_pointer<Owner>::value ?
 						nullptr :
 						static_cast<void (*)(void *)>([](void *owner_ptr_ptr) {
@@ -239,60 +259,49 @@ public:
 				static _method_table_t inst = static_bind<Owner>();
 				return inst;
 			}
+
+			_JEKO_CONCEPT(OtherMethodSet)
+			static _method_table_t &dynamic_binding(const jeko<OtherMethodSet> &src) {
+				static std::unordered_map<std::type_index, _method_table_t> map;
+
+				#ifdef __cpp_lib_shared_mutex
+					static std::shared_mutex mtx;
+					mtx.lock_shared();
+				#else
+					static std::mutex mtx;
+					std::lock_guard<std::mutex> lg(mtx);
+				#endif
+
+				auto &src_mt = *src->_method_table_ptr;
+				auto it = map.find(*src_mt._type_info_ptr);
+				if (it == map.end()) {
+					#ifdef __cpp_lib_shared_mutex
+						mtx.unlock_shared();
+						std::lock_guard<std::mutex> lg(mtx);
+					#endif
+
+					auto &mt = map[*src_mt._type_info_ptr];
+					mt._type_info_ptr = src_mt._type_info_ptr;
+					mt._free_owner_ptr = src_mt._free_owner_ptr;
+					mt._copy_owner_ptr = src_mt._copy_owner_ptr;
+					mt._move_owner_ptr = src_mt._move_owner_ptr;
+					mt.age = src_mt.age;
+					return mt;
+				}
+				#ifdef __cpp_lib_shared_mutex
+					mtx.unlock_shared();
+				#endif
+				return it->second;
+			}
 		};
 
 		_method_table_t *_method_table_ptr;
 		uint8_t _owner_ptr[sizeof(std::shared_ptr<void>)];
 	};
 
-	#define _JEKO_CONCEPT(_T) \
-	template < \
-		typename _T, \
-		typename = decltype(_T::age) \
-	>
-
-	_JEKO_CONCEPT(OtherMethodSet)
-	jeko(const jeko<OtherMethodSet> &src) {
-		if (!src) {
-			value()._method_table_ptr = nullptr;
-			return;
-		}
-		src->_method_table_ptr->_copy_owner_ptr(&src->_owner_ptr, &value()._owner_ptr);
-		value()._method_table_ptr = new wrapper::_method_table_t{
-			src->_method_table_ptr->_type_info_ptr,
-			[](wrapper::_method_table_t *method_table_ptr) {
-				delete method_table_ptr;
-			},
-			src->_method_table_ptr->_free_owner_ptr,
-			src->_method_table_ptr->_copy_owner_ptr,
-			src->_method_table_ptr->_move_owner_ptr,
-			src->_method_table_ptr->age
-		};
-	}
-
-	_JEKO_CONCEPT(OtherMethodSet)
-	jeko(jeko<OtherMethodSet> &&src) {
-		if (!src) {
-			value()._method_table_ptr = nullptr;
-			return;
-		}
-		src->_method_table_ptr->_move_owner_ptr(&src->_owner_ptr, &value()._owner_ptr);
-		value()._method_table_ptr = new wrapper::_method_table_t{
-			src->_method_table_ptr->_type_info_ptr,
-			[](wrapper::_method_table_t *method_table_ptr) {
-				delete method_table_ptr;
-			},
-			src->_method_table_ptr->_free_owner_ptr,
-			src->_method_table_ptr->_copy_owner_ptr,
-			src->_method_table_ptr->_move_owner_ptr,
-			src->_method_table_ptr->age
-		};
-		src.reset();
-	}
-
 	_JEKO_BASE
 
-	#undef _JEKO_CONCEPT
+#undef _JEKO_CONCEPT
 };
 
 struct dog {
