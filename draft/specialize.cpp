@@ -204,7 +204,7 @@ class jeko<animal> {
 #define _JEKO_CONCEPT(_T) \
 template < \
 	typename _T, \
-	typename = decltype(std::remove_reference<_T>::type::age) \
+	typename = decltype(&_T::age) \
 >
 public:
 	class wrapper {
