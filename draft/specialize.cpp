@@ -20,19 +20,20 @@ class jeko;
 
 namespace _jeko {
 	template <typename P>
-	struct _ptr_elmt;
+	struct ptr_elmt;
 	template <typename Elmt>
-	struct _ptr_elmt<Elmt *> {
+	struct ptr_elmt<Elmt *> {
 		using type = Elmt;
 	};
 	template <typename Elmt>
-	struct _ptr_elmt<std::shared_ptr<Elmt>> {
+	struct ptr_elmt<std::shared_ptr<Elmt>> {
 		using type = Elmt;
 	};
 	template <typename Elmt>
-	struct _ptr_elmt<std::unique_ptr<Elmt>> {
+	struct ptr_elmt<std::unique_ptr<Elmt>> {
 		using type = Elmt;
 	};
+	struct owner_ptr {};
 };
 
 #define _JEKO_BASE \
@@ -185,6 +186,12 @@ const wrapper *operator->() const { \
 \
 private: \
 uint8_t _value[sizeof(wrapper)];
+
+#define _JEKO_METHODS_TABLE_BASE \
+const std::type_info *_type_info_ptr; \
+void (*_free_owner_ptr)(_jeko::owner_ptr *); \
+void (*_copy_owner_ptr)(const _jeko::owner_ptr *, _jeko::owner_ptr *); \
+void (*_move_owner_ptr)(_jeko::owner_ptr *, _jeko::owner_ptr *);
 // _JEKO_HEADER_END
 
 struct animal {
@@ -216,40 +223,38 @@ public:
 		wrapper &operator=(wrapper &&) = delete;
 
 		size_t age() const {
-			return _method_table_ptr->age(this);
+			return _method_table_ptr->age(&_owner_ptr);
 		}
 
 		struct _method_table_t {
-			const std::type_info *_type_info_ptr;
-			void (*_free_owner_ptr)(void *);
-			void (*_copy_owner_ptr)(const void *, void *);
-			void (*_move_owner_ptr)(void *, void *);
-			size_t (*age)(const wrapper *);
+			_JEKO_METHODS_TABLE_BASE
+
+			size_t (*age)(const _jeko::owner_ptr *);
 
 			template <typename Owner>
 			static constexpr _method_table_t static_bind() {
 				return _method_table_t{
-					&typeid(typename _jeko::_ptr_elmt<Owner>::type),
+					&typeid(typename _jeko::ptr_elmt<Owner>::type),
 					std::is_pointer<Owner>::value ?
 						nullptr :
-						static_cast<void (*)(void *)>([](void *owner_ptr_ptr) {
+						static_cast<void (*)(_jeko::owner_ptr *)>([](_jeko::owner_ptr *owner_ptr_ptr) {
 							(*reinterpret_cast<Owner *>(owner_ptr_ptr)).~Owner();
 						})
 					,
 					std::is_pointer<Owner>::value ?
 						nullptr :
-						static_cast<void (*)(const void *, void *)>([](const void *src, void *dest) {
+						static_cast<void (*)(const _jeko::owner_ptr *, _jeko::owner_ptr *)>([](const _jeko::owner_ptr *src, _jeko::owner_ptr *dest) {
 							new (reinterpret_cast<Owner *>(dest)) Owner(*reinterpret_cast<const Owner *>(src));
 						})
 					,
 					std::is_pointer<Owner>::value ?
 						nullptr :
-						static_cast<void (*)(void *, void *)>([](void *src, void *dest) {
+						static_cast<void (*)(_jeko::owner_ptr *, _jeko::owner_ptr *)>([](_jeko::owner_ptr *src, _jeko::owner_ptr *dest) {
 							new (reinterpret_cast<Owner *>(dest)) Owner(std::move(*reinterpret_cast<Owner *>(src)));
 						})
 					,
-					[](const wrapper *self)->size_t {
-						return (**reinterpret_cast<Owner *>(reinterpret_cast<uintptr_t>(&self->_owner_ptr))).age();
+					[](const _jeko::owner_ptr *owner_ptr_ptr)->size_t {
+						return (**reinterpret_cast<Owner *>(reinterpret_cast<uintptr_t>(owner_ptr_ptr))).age();
 					}
 				};
 			}
@@ -296,7 +301,10 @@ public:
 		};
 
 		_method_table_t *_method_table_ptr;
-		uint8_t _owner_ptr[sizeof(std::shared_ptr<void>)];
+
+		struct : _jeko::owner_ptr {
+			uint8_t data[sizeof(std::shared_ptr<void>)];
+		} _owner_ptr;
 	};
 
 	_JEKO_BASE
