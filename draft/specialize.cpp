@@ -1,13 +1,16 @@
 #include <iostream>
 #include <cassert>
 
-// _JEKO_HEADER_BEGIN VARSION:0
+#ifndef _JEKO_H
+#define _JEKO_H 0
 // The Jeko Documentation at https://github.com/yulon/jeko
+
 #include <type_traits>
 #include <typeinfo>
 #include <typeindex>
 #include <memory>
 #include <unordered_map>
+#include <cassert>
 
 #ifdef __cpp_lib_shared_mutex
 	#include <shared_mutex>
@@ -19,55 +22,41 @@ template <typename MethodSet>
 class jeko;
 
 namespace _jeko {
-	template <typename P>
-	struct ptr_elmt;
-	template <typename Elmt>
-	struct ptr_elmt<Elmt *> {
-		using type = Elmt;
-	};
-	template <typename Elmt>
-	struct ptr_elmt<std::shared_ptr<Elmt>> {
-		using type = Elmt;
-	};
-	template <typename Elmt>
-	struct ptr_elmt<std::unique_ptr<Elmt>> {
-		using type = Elmt;
-	};
 	struct owner_ptr {};
 };
 
 #define _JEKO_BASE \
 jeko(std::nullptr_t = nullptr) { \
-	value()._method_table_ptr = nullptr; \
+	_val._method_table_ptr = nullptr; \
 } \
 _JEKO_CONCEPT(Impl) \
 jeko(Impl *obj) { \
 	if (!obj) { \
-		value()._method_table_ptr = nullptr; \
+		_val._method_table_ptr = nullptr; \
 		return; \
 	} \
-	*reinterpret_cast<Impl **>(&value()._owner_ptr) = obj; \
-	value()._method_table_ptr = &wrapper::_method_table_t::static_binding<Impl *>(); \
+	*reinterpret_cast<Impl **>(&_val._owner_ptr) = obj; \
+	_val._method_table_ptr = &_wrapper_t::_method_table_t::static_binding<Impl *>(); \
 } \
 \
 _JEKO_CONCEPT(Impl) \
 jeko(std::shared_ptr<Impl> &&obj) { \
 	if (!obj) { \
-		value()._method_table_ptr = nullptr; \
+		_val._method_table_ptr = nullptr; \
 		return; \
 	} \
-	new (reinterpret_cast<std::shared_ptr<Impl> *>(&value()._owner_ptr)) std::shared_ptr<Impl>(std::move(obj)); \
-	value()._method_table_ptr = &wrapper::_method_table_t::static_binding<std::shared_ptr<Impl>>(); \
+	new (reinterpret_cast<std::shared_ptr<Impl> *>(&_val._owner_ptr)) std::shared_ptr<Impl>(std::move(obj)); \
+	_val._method_table_ptr = &_wrapper_t::_method_table_t::static_binding<std::shared_ptr<Impl>>(); \
 } \
 \
 _JEKO_CONCEPT(Impl) \
 jeko(const std::shared_ptr<Impl> &obj) { \
 	if (!obj) { \
-		value()._method_table_ptr = nullptr; \
+		_val._method_table_ptr = nullptr; \
 		return; \
 	} \
-	new (reinterpret_cast<std::shared_ptr<Impl> *>(&value()._owner_ptr)) std::shared_ptr<Impl>(obj); \
-	value()._method_table_ptr = &wrapper::_method_table_t::static_binding<std::shared_ptr<Impl>>(); \
+	new (reinterpret_cast<std::shared_ptr<Impl> *>(&_val._owner_ptr)) std::shared_ptr<Impl>(obj); \
+	_val._method_table_ptr = &_wrapper_t::_method_table_t::static_binding<std::shared_ptr<Impl>>(); \
 } \
 \
 _JEKO_CONCEPT(Impl) \
@@ -84,11 +73,11 @@ jeko(Impl &obj) : jeko(&obj) {} \
 \
 jeko(const jeko &src) { \
 	if (!src) { \
-		value()._method_table_ptr = nullptr; \
+		_val._method_table_ptr = nullptr; \
 		return; \
 	} \
-	src->_method_table_ptr->_copy_owner_ptr(&src->_owner_ptr, &value()._owner_ptr); \
-	value()._method_table_ptr = src->_method_table_ptr; \
+	src->_method_table_ptr->_copy_owner_ptr(&src->_owner_ptr, &_val._owner_ptr); \
+	_val._method_table_ptr = src->_method_table_ptr; \
 } \
 \
 jeko &operator=(const jeko &src) { \
@@ -99,11 +88,11 @@ jeko &operator=(const jeko &src) { \
 \
 jeko(jeko &&src) { \
 	if (!src) { \
-		value()._method_table_ptr = nullptr; \
+		_val._method_table_ptr = nullptr; \
 		return; \
 	} \
-	src->_method_table_ptr->_move_owner_ptr(&src->_owner_ptr, &value()._owner_ptr); \
-	value()._method_table_ptr = src->_method_table_ptr; \
+	src->_method_table_ptr->_move_owner_ptr(&src->_owner_ptr, &_val._owner_ptr); \
+	_val._method_table_ptr = src->_method_table_ptr; \
 	src->_method_table_ptr = nullptr; \
 } \
 \
@@ -116,21 +105,21 @@ jeko &operator=(jeko &&src) { \
 _JEKO_CONCEPT(OtherMethodSet) \
 jeko(const jeko<OtherMethodSet> &src) { \
 	if (!src) { \
-		value()._method_table_ptr = nullptr; \
+		_val._method_table_ptr = nullptr; \
 		return; \
 	} \
-	src->_method_table_ptr->_copy_owner_ptr(&src->_owner_ptr, &value()._owner_ptr); \
-	value()._method_table_ptr = &wrapper::_method_table_t::dynamic_binding(src); \
+	src->_method_table_ptr->_copy_owner_ptr(&src->_owner_ptr, &_val._owner_ptr); \
+	_val._method_table_ptr = &_wrapper_t::_method_table_t::dynamic_binding(src); \
 } \
 \
 _JEKO_CONCEPT(OtherMethodSet) \
 jeko(jeko<OtherMethodSet> &&src) { \
 	if (!src) { \
-		value()._method_table_ptr = nullptr; \
+		_val._method_table_ptr = nullptr; \
 		return; \
 	} \
-	src->_method_table_ptr->_move_owner_ptr(&src->_owner_ptr, &value()._owner_ptr); \
-	value()._method_table_ptr = &wrapper::_method_table_t::dynamic_binding(src); \
+	src->_method_table_ptr->_move_owner_ptr(&src->_owner_ptr, &_val._owner_ptr); \
+	_val._method_table_ptr = &_wrapper_t::_method_table_t::dynamic_binding(src); \
 	src->_method_table_ptr = nullptr; \
 } \
 \
@@ -142,14 +131,14 @@ void reset() { \
 	if (!has_value()) { \
 		return; \
 	} \
-	if (value()._method_table_ptr->_free_owner_ptr) { \
-		value()._method_table_ptr->_free_owner_ptr(&value()._owner_ptr); \
+	if (_val._method_table_ptr->_free_owner_ptr) { \
+		_val._method_table_ptr->_free_owner_ptr(&_val._owner_ptr); \
 	} \
-	value()._method_table_ptr = nullptr; \
+	_val._method_table_ptr = nullptr; \
 } \
 \
 bool has_value() const { \
-	return value()._method_table_ptr; \
+	return _val._method_table_ptr; \
 } \
 \
 operator bool() const { \
@@ -157,42 +146,37 @@ operator bool() const { \
 } \
 \
 const std::type_info &type() const { \
-	return value()._method_table_ptr ? *value()._method_table_ptr->_type_info_ptr : typeid(std::nullptr_t); \
+	return _val._method_table_ptr ? *_val._method_table_ptr->_type_info_ptr : typeid(std::nullptr_t); \
 } \
 \
-wrapper &value() { \
-	return reinterpret_cast<wrapper &>(_value); \
+_JEKO_CONCEPT(Impl) \
+Impl &value() const { \
+	assert(type() == typeid(Impl)); \
+	return _val._method_table_ptr->_get_raw_ptr ? \
+		*reinterpret_cast<Impl *>(_val._method_table_ptr->_get_raw_ptr(&_val._owner_ptr)) : \
+		**reinterpret_cast<Impl *const *>(&_val._owner_ptr) \
+	; \
 } \
 \
-const wrapper &value() const { \
-	return reinterpret_cast<const wrapper &>(_value); \
+_wrapper_t *operator->() { \
+	return &_val; \
 } \
 \
-wrapper &operator*() { \
-	return value(); \
-} \
-\
-const wrapper &operator*() const { \
-	return value(); \
-} \
-\
-wrapper *operator->() { \
-	return &value(); \
-} \
-\
-const wrapper *operator->() const { \
-	return &value(); \
+const _wrapper_t *operator->() const { \
+	return &_val; \
 } \
 \
 private: \
-uint8_t _value[sizeof(wrapper)];
+_wrapper_t _val;
 
 #define _JEKO_METHODS_TABLE_BASE \
 const std::type_info *_type_info_ptr; \
 void (*_free_owner_ptr)(_jeko::owner_ptr *); \
 void (*_copy_owner_ptr)(const _jeko::owner_ptr *, _jeko::owner_ptr *); \
-void (*_move_owner_ptr)(_jeko::owner_ptr *, _jeko::owner_ptr *);
-// _JEKO_HEADER_END
+void (*_move_owner_ptr)(_jeko::owner_ptr *, _jeko::owner_ptr *); \
+void *(*_get_raw_ptr)(const _jeko::owner_ptr *);
+
+#endif
 
 struct animal {
 	size_t age() const;
@@ -206,7 +190,7 @@ struct animal {
 
 template <>
 class jeko<animal> {
-// _JEKO_SPECIALIZED METHODSET_HASH:0
+// _JEKO_METHODSET_HASH 0
 // The Jeko Documentation at https://github.com/yulon/jeko
 #define _JEKO_CONCEPT(_T) \
 template < \
@@ -214,14 +198,8 @@ template < \
 	typename = decltype(&_T::age) \
 >
 public:
-	class wrapper {
+	class _wrapper_t {
 	public:
-		wrapper() = delete;
-		wrapper(const wrapper &) = delete;
-		wrapper(wrapper &&) = delete;
-		wrapper &operator=(const wrapper &) = delete;
-		wrapper &operator=(wrapper &&) = delete;
-
 		size_t age() const {
 			return _method_table_ptr->age(&_owner_ptr);
 		}
@@ -231,37 +209,49 @@ public:
 
 			size_t (*age)(const _jeko::owner_ptr *);
 
-			template <typename Owner>
-			static constexpr _method_table_t static_bind() {
+			template <typename OwnerPtr>
+			static constexpr _method_table_t static_bind(
+				typename std::enable_if<std::is_pointer<OwnerPtr>::value>::type * = nullptr
+			) {
 				return _method_table_t{
-					&typeid(typename _jeko::ptr_elmt<Owner>::type),
-					std::is_pointer<Owner>::value ?
-						nullptr :
-						static_cast<void (*)(_jeko::owner_ptr *)>([](_jeko::owner_ptr *owner_ptr_ptr) {
-							(*reinterpret_cast<Owner *>(owner_ptr_ptr)).~Owner();
-						})
-					,
-					std::is_pointer<Owner>::value ?
-						nullptr :
-						static_cast<void (*)(const _jeko::owner_ptr *, _jeko::owner_ptr *)>([](const _jeko::owner_ptr *src, _jeko::owner_ptr *dest) {
-							new (reinterpret_cast<Owner *>(dest)) Owner(*reinterpret_cast<const Owner *>(src));
-						})
-					,
-					std::is_pointer<Owner>::value ?
-						nullptr :
-						static_cast<void (*)(_jeko::owner_ptr *, _jeko::owner_ptr *)>([](_jeko::owner_ptr *src, _jeko::owner_ptr *dest) {
-							new (reinterpret_cast<Owner *>(dest)) Owner(std::move(*reinterpret_cast<Owner *>(src)));
-						})
-					,
+					&typeid(typename std::remove_pointer<OwnerPtr>::type),
+					nullptr,
+					nullptr,
+					nullptr,
+					nullptr,
 					[](const _jeko::owner_ptr *owner_ptr_ptr)->size_t {
-						return (**reinterpret_cast<Owner *>(reinterpret_cast<uintptr_t>(owner_ptr_ptr))).age();
+						return (**reinterpret_cast<OwnerPtr *>(reinterpret_cast<uintptr_t>(owner_ptr_ptr))).age();
 					}
 				};
 			}
 
-			template <typename Owner>
+			template <typename OwnerPtr>
+			static constexpr _method_table_t static_bind(
+				typename OwnerPtr::element_type * = nullptr
+			) {
+				return _method_table_t{
+					&typeid(typename OwnerPtr::element_type),
+					[](_jeko::owner_ptr *owner_ptr_ptr) {
+						(*reinterpret_cast<OwnerPtr *>(owner_ptr_ptr)).~OwnerPtr();
+					},
+					[](const _jeko::owner_ptr *src, _jeko::owner_ptr *dest) {
+						new (reinterpret_cast<OwnerPtr *>(dest)) OwnerPtr(*reinterpret_cast<const OwnerPtr *>(src));
+					},
+					[](_jeko::owner_ptr *src, _jeko::owner_ptr *dest) {
+						new (reinterpret_cast<OwnerPtr *>(dest)) OwnerPtr(std::move(*reinterpret_cast<OwnerPtr *>(src)));
+					},
+					[](const _jeko::owner_ptr *owner_ptr_ptr)->void * {
+						return (*reinterpret_cast<const OwnerPtr *>(owner_ptr_ptr)).get();
+					},
+					[](const _jeko::owner_ptr *owner_ptr_ptr)->size_t {
+						return (**reinterpret_cast<const OwnerPtr *>(owner_ptr_ptr)).age();
+					}
+				};
+			}
+
+			template <typename OwnerPtr>
 			static _method_table_t &static_binding() {
-				static _method_table_t inst = static_bind<Owner>();
+				static _method_table_t inst = static_bind<OwnerPtr>();
 				return inst;
 			}
 
